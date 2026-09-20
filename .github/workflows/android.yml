@@ -19,6 +19,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
       - name: Create Webview Android App
         run: |
           mkdir -p app/src/main/java/com/example/app
@@ -58,7 +61,6 @@ jobs:
           }
           EOF
 
-          # Gradle build setup
           cat << 'EOF' > settings.gradle
           rootProject.name = "MyApp"
           include ':app'
@@ -89,12 +91,14 @@ jobs:
           }
           EOF
 
-          # Copy repo code into assets
           mkdir -p app/src/main/assets
           cp -r * app/src/main/assets/ 2>/dev/null || true
 
-      - name: Build APK with Gradle
-        run: gradle assembleDebug
+      - name: Setup Gradle Wrapper
+        run: gradle wrapper --gradle-version 8.2
+
+      - name: Build APK with Gradle Wrapper
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
