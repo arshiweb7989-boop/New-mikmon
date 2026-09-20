@@ -50,7 +50,7 @@ jobs:
 
           cd android-app
           $ANDROID_HOME/build-tools/34.0.0/aapt2 compile --dir src/main/res -o build/res.zip || true
-          $ANDROID_HOME/build-tools/34.0.0/aapt2 link -o app.apk -M src/main/AndroidManifest.xml -I $ANDROID_HOME/platforms/android-34/android.jar --manifest-min-sdk-version 21
+          $ANDROID_HOME/build-tools/34.0.0/aapt2 link -o app.apk --manifest src/main/AndroidManifest.xml -I $ANDROID_HOME/platforms/android-34/android.jar --min-sdk-version 21
           javac -classpath $ANDROID_HOME/platforms/android-34/android.jar -d build/ src/main/MainActivity.java
           $ANDROID_HOME/build-tools/34.0.0/d8 --lib $ANDROID_HOME/platforms/android-34/android.jar --output build/ build/com/example/app/MainActivity.class
           zip -uj app.apk build/classes.dex
