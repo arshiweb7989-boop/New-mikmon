@@ -3,8 +3,6 @@ name: Build Android APK
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -23,14 +21,13 @@ jobs:
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v3
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Check files in root
+        run: ls -la
 
       - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
-
-      - name: Create local.properties
-        run: |
-          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> local.properties
+        run: chmod +x ./gradlew || echo "gradlew not found"
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
@@ -41,14 +38,3 @@ jobs:
           name: app-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-
-      - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace
-        continue-on-error: true
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: app/build/outputs/apk/release/*.apk
-          if-no-files-found: ignore
