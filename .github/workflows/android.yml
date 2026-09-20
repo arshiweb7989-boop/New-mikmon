@@ -19,18 +19,21 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Create Webview Android App
+      - name: Generate Android Project & Build APK
         run: |
+          mkdir -p app/src/main/assets
+          mkdir -p app/src/main/res/mipmap-hdpi
           mkdir -p app/src/main/java/com/example/app
-          mkdir -p app/src/main/res/layout
-          
+          mkdir -p app/build/outputs/apk/debug
+
+          # Web code ko assets mein copy karein
+          cp -r * app/src/main/assets/ 2>/dev/null || true
+
+          # Android Manifest create karein
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.app">
               <uses-permission android:name="android.permission.INTERNET" />
-              <application android:label="My App" android:icon="@android:drawable/sym_def_app_icon">
+              <application android:label="My App" android:allowBackup="true">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -41,6 +44,7 @@ jobs:
           </manifest>
           EOF
 
+          # Java MainActivity create karein
           cat << 'EOF' > app/src/main/java/com/example/app/MainActivity.java
           package com.example.app;
           import android.app.Activity;
@@ -61,15 +65,15 @@ jobs:
           }
           EOF
 
+          # Build.gradle files create karein
           cat << 'EOF' > settings.gradle
-          rootProject.name = "MyApp"
           include ':app'
           EOF
 
           cat << 'EOF' > build.gradle
           buildscript {
               repositories { google(); mavenCentral() }
-              dependencies { classpath 'com.android.tools.build:gradle:8.1.1' }
+              dependencies { classpath 'com.android.tools.build:gradle:8.0.2' }
           }
           allprojects {
               repositories { google(); mavenCentral() }
@@ -91,16 +95,16 @@ jobs:
           }
           EOF
 
-          mkdir -p app/src/main/assets
-          cp -r * app/src/main/assets/ 2>/dev/null || true
+      - name: Setup Specific Gradle Wrapper
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.0-bin.zip
+          unzip -q gradle-8.0-bin.zip
+          ./gradle-8.0/bin/gradle wrapper
 
-      - name: Setup Gradle Wrapper
-        run: gradle wrapper --gradle-version 8.2
-
-      - name: Build APK with Gradle Wrapper
+      - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
