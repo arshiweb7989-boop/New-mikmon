@@ -19,13 +19,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Build APK using Android SDK
+      - name: Create Webview Android App
         run: |
-          mkdir -p android-app/src/main/res/layout android-app/build
+          mkdir -p app/src/main/java/com/example/app
+          mkdir -p app/src/main/res/layout
           
-          cat << 'EOF' > android-app/src/main/AndroidManifest.xml
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.app">
-              <application android:label="My App">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application android:label="My App" android:icon="@android:drawable/sym_def_app_icon">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -36,30 +38,66 @@ jobs:
           </manifest>
           EOF
 
-          cat << 'EOF' > android-app/src/main/MainActivity.java
+          cat << 'EOF' > app/src/main/java/com/example/app/MainActivity.java
           package com.example.app;
           import android.app.Activity;
           import android.os.Bundle;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
           public class MainActivity extends Activity {
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+                  WebView webView = new WebView(this);
+                  webView.getSettings().setJavaScriptEnabled(true);
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.loadUrl("file:///android_asset/index.html");
+                  setContentView(webView);
               }
           }
           EOF
 
-          cd android-app
-          $ANDROID_HOME/build-tools/34.0.0/aapt2 compile --dir src/main/res -o build/res.zip || true
-          $ANDROID_HOME/build-tools/34.0.0/aapt2 link -o app.apk --manifest src/main/AndroidManifest.xml -I $ANDROID_HOME/platforms/android-34/android.jar --min-sdk-version 21
-          javac -classpath $ANDROID_HOME/platforms/android-34/android.jar -d build/ src/main/MainActivity.java
-          $ANDROID_HOME/build-tools/34.0.0/d8 --lib $ANDROID_HOME/platforms/android-34/android.jar --output build/ build/com/example/app/MainActivity.class
-          zip -uj app.apk build/classes.dex
-          
-          keytool -genkeypair -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android app.apk
+          # Gradle build setup
+          cat << 'EOF' > settings.gradle
+          rootProject.name = "MyApp"
+          include ':app'
+          EOF
 
-      - name: Upload APK
+          cat << 'EOF' > build.gradle
+          buildscript {
+              repositories { google(); mavenCentral() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.1.1' }
+          }
+          allprojects {
+              repositories { google(); mavenCentral() }
+          }
+          EOF
+
+          cat << 'EOF' > app/build.gradle
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.example.app'
+              compileSdk 33
+              defaultConfig {
+                  applicationId "com.example.app"
+                  minSdk 21
+                  targetSdk 33
+                  versionCode 1
+                  versionName "1.0"
+              }
+          }
+          EOF
+
+          # Copy repo code into assets
+          mkdir -p app/src/main/assets
+          cp -r * app/src/main/assets/ 2>/dev/null || true
+
+      - name: Build APK with Gradle
+        run: gradle assembleDebug
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: android-app/app.apk
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
