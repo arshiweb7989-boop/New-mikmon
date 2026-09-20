@@ -1,49 +1,20 @@
-name: Build Android APK
+name: Check Project Structure
 
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build APK
+  check:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Android SDK Path
-        run: echo "sdk.dir=/usr/local/lib/android/sdk" > local.properties
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew || echo "gradlew not found in root"
-
-      - name: Generate Gradle Wrapper
+      - name: List Files
         run: |
-          if [ ! -f ./gradlew ]; then
-            gradle wrapper
-          fi
-
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
-
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
+          echo "=========== ROOT DIRECTORY ==========="
+          ls -la
+          echo "=========== SEARCHING FOR GRADLE ==========="
+          find . -name "build.gradle*" -maxdepth 3
+          echo "=========== SEARCHING FOR PACKAGE.JSON ==========="
+          find . -name "package.json" -maxdepth 3
