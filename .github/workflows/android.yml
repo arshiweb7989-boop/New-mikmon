@@ -21,7 +21,7 @@ jobs:
 
       - name: Generate Gradle Structure
         run: |
-          gradle init --type basic --script-style groovy --no-incubating
+          gradle init --type basic --dsl groovy
           gradle wrapper
 
       - name: Build APK
