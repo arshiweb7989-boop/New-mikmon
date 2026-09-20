@@ -1,4 +1,4 @@
-name: Build APK
+name: Build Android APK
 
 on:
   push:
@@ -10,25 +10,56 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Generate Gradle Structure
+      - name: Build APK using Android SDK
         run: |
-          gradle init --type basic --dsl groovy --overwrite
-          gradle wrapper
+          mkdir -p android-app/src/main/res/layout android-app/build
+          
+          cat << 'EOF' > android-app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.app">
+              <application android:label="My App">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
 
-      - name: Build APK
-        run: ./gradlew build --warning-mode all
+          cat << 'EOF' > android-app/src/main/MainActivity.java
+          package com.example.app;
+          import android.app.Activity;
+          import android.os.Bundle;
+          public class MainActivity extends Activity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+              }
+          }
+          EOF
 
-      - name: Upload Artifact
+          cd android-app
+          $ANDROID_HOME/build-tools/34.0.0/aapt2 compile --dir src/main/res -o build/res.zip || true
+          $ANDROID_HOME/build-tools/34.0.0/aapt2 link -o app.apk -M src/main/AndroidManifest.xml -I $ANDROID_HOME/platforms/android-34/android.jar --manifest-min-sdk-version 21
+          javac -classpath $ANDROID_HOME/platforms/android-34/android.jar -d build/ src/main/MainActivity.java
+          $ANDROID_HOME/build-tools/34.0.0/d8 --lib $ANDROID_HOME/platforms/android-34/android.jar --output build/ build/com/example/app/MainActivity.class
+          zip -uj app.apk build/classes.dex
+          
+          keytool -genkeypair -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android app.apk
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: build-files
-          path: .
+          name: app-release
+          path: android-app/app.apk
