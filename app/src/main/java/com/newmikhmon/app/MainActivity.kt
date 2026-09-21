@@ -78,7 +78,7 @@ class MainActivity : Activity() {
         searching=true
         base("AUTO SEARCH")
         root.addView(text("MikroTik Router Discovery",20,true,Color.WHITE,Gravity.START))
-        root.addView(text("Searching this Wi-Fi/LAN for both MikroTik API ports: 8728 and 8729.",13,false,Color.rgb(165,190,215),Gravity.START))
+        root.addView(text("Searching the active LAN. Gateway is checked first, then nearby IPs on ports 8728 and 8729.",13,false,Color.rgb(165,190,215),Gravity.START))
         status.text="Preparing local network scan…"
         result=text("",14,false,Color.WHITE,Gravity.START)
         result.setPadding(0,14,0,14)
@@ -125,12 +125,25 @@ class MainActivity : Activity() {
         status.text="Connecting to "+ip+":"+port+"…"
         ex.execute{
             try{
-                api.connect(ip,port,u,p,7000,ssl)
+                if(ip.isBlank()) throw Exception("Router IP/host is required")
+                if(u.isBlank()) throw Exception("Username is required")
+                api.connect(ip.trim(),port,u,p,8000,ssl)
+                // Real API verification: read the router resource after login.
+                val info=api.getResource()
                 connected=true
-                ui{if(!isFinishing)dashboard(ip)}
+                ui{
+                    if(!isFinishing){
+                        status.text="● CONNECTED  •  "+(info["version"]?:"RouterOS")
+                        dashboard(ip)
+                    }
+                }
             }catch(e:Exception){
                 connected=false
-                ui{status.text="Connection failed: "+(e.message?:"Unknown error");toast(e.message?:"Unable to connect to MikroTik")}
+                val msg=e.message?:e.javaClass.simpleName
+                ui{
+                    status.text="Connection failed: $msg"
+                    toast(msg)
+                }
             }
         }
     }
@@ -160,7 +173,7 @@ class MainActivity : Activity() {
             row.addView(secondaryButton(label){task{
                 when(label){"DELETE"->api.removeUser(id.text.toString());"DISABLE"->api.disableUser(id.text.toString());else->api.enableUser(id.text.toString())}
                 toast(label+" completed")
-            }},LinearLayout.LayoutParams(0,56,1f).apply{setMargins(3,3,3,3)})
+            }},LinearLayout.LayoutParams(0,56,1f).apply{setMargins(4,4,4,4)})
         }
         root.addView(row)
         result=text("",14,false,Color.WHITE,Gravity.START);result.setTextIsSelectable(true);result.setPadding(0,16,0,16);root.addView(result)
@@ -169,37 +182,49 @@ class MainActivity : Activity() {
 
     private fun scanLocalNetwork():List<Pair<String,Int>>{
         val cm=getSystemService(ConnectivityManager::class.java)
-        val network=cm.activeNetwork?:throw Exception("No active network")
-        val caps=cm.getNetworkCapabilities(network)
-        if(caps==null||!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))
-            throw Exception("Connect phone to the same Wi-Fi as MikroTik")
-        val lp=cm.getLinkProperties(network)?:throw Exception("Could not read Wi-Fi network")
-        val la=lp.linkAddresses.firstOrNull{it.address is Inet4Address}?:throw Exception("No IPv4 on Wi-Fi")
+        val network=cm.activeNetwork?:throw Exception("No active network. Connect phone to MikroTik Wi-Fi/LAN first.")
+        val lp=cm.getLinkProperties(network)?:throw Exception("Could not read the active network.")
+        val la=lp.linkAddresses.firstOrNull{it.address is Inet4Address}
+            ?:throw Exception("No IPv4 address on the active network.")
         val raw=(la.address as Inet4Address).address
-        val prefix=la.prefixLength
-        val scanPrefix=if(prefix<24)24 else prefix
-        val mask=if(scanPrefix>=32)-1 else(-1 shl (32-scanPrefix))
+        val prefix=la.prefixLength.coerceIn(1,30)
+
+        // First try the actual default gateway. This is the most reliable
+        // discovery path for MikroTik routers such as 172.26.10.1.
+        val gateways=lp.routes.mapNotNull{it.gateway}
+            .filterIsInstance<Inet4Address>()
+            .mapNotNull{it.hostAddress}
+            .distinct()
+
         val ipInt=((raw[0].toInt() and 255) shl 24) or ((raw[1].toInt() and 255) shl 16) or
                 ((raw[2].toInt() and 255) shl 8) or (raw[3].toInt() and 255)
+        val scanPrefix=if(prefix<24)24 else prefix
+        val mask=(-1 shl (32-scanPrefix))
         val networkInt=ipInt and mask
-        val hostCount=if(scanPrefix>=31)0 else (1 shl (32-scanPrefix))-2
-        if(hostCount<=0)throw Exception("Wi-Fi network is too small for discovery")
-        val gatewayCandidates=lp.routes.mapNotNull{it.gateway}.filterIsInstance<Inet4Address>().map{it.hostAddress}.filterNotNull()
-        val candidates=(1..hostCount).map{offset->
+        val hostCount=(1 shl (32-scanPrefix))-2
+        val localCandidates=if(hostCount>0)(1..hostCount).map{offset->
             val n=networkInt+offset
             ((n ushr 24) and 255).toString()+"."+((n ushr 16) and 255)+"."+((n ushr 8) and 255)+"."+(n and 255)
-        }.plus(gatewayCandidates).plus(raw.joinToString(".") { (it.toInt() and 255).toString() }).distinct()
+        }else emptyList()
+
+        val selfIp=raw.joinToString("."){(it.toInt() and 255).toString()}
+        val candidates=(gateways+localCandidates+listOf(selfIp)).distinct()
         val found=Collections.synchronizedList(mutableListOf<Pair<String,Int>>())
         val pool=Executors.newFixedThreadPool(32)
         try{
             val futures=candidates.flatMap{candidate->
                 listOf(8728,8729).map{port->pool.submit{
+                    if(candidate==selfIp)return@submit
                     if(probeApi(candidate,port,port==8729))found.add(candidate to port)
                 }}
             }
             futures.forEach{it.get()}
         }finally{pool.shutdownNow()}
-        return found.distinct().sortedWith(compareBy({it.first},{it.second}))
+
+        // Put gateway results first so a router like 172.26.10.1 appears immediately.
+        return found.distinct().sortedWith(compareBy<Pair<String,Int>>(
+            {if(it.first in gateways)0 else 1},{it.first},{it.second}
+        ))
     }
 
     private fun probeApi(ip:String,port:Int,ssl:Boolean):Boolean=try{
@@ -213,28 +238,33 @@ class MainActivity : Activity() {
             ctx.init(null,trustAll,java.security.SecureRandom())
             val s=ctx.socketFactory.createSocket() as javax.net.ssl.SSLSocket
             s.use{
-                it.soTimeout=1500
-                it.connect(InetSocketAddress(ip,port),1200)
+                it.soTimeout=1800
+                it.connect(InetSocketAddress(ip,port),1400)
                 it.startHandshake()
                 true
             }
         }else{
             Socket().use{s->
-                s.soTimeout=1200
-                s.connect(InetSocketAddress(ip,port),1000)
+                s.soTimeout=1800
+                s.connect(InetSocketAddress(ip,port),1400)
                 val input=java.io.BufferedInputStream(s.getInputStream())
                 val output=java.io.BufferedOutputStream(s.getOutputStream())
                 val word="/login".toByteArray(Charsets.UTF_8)
-                writeApiLength(output,word.size);output.write(word);output.write(0);output.flush()
+                writeApiLength(output,word.size)
+                output.write(word)
+                output.write(0)
+                output.flush()
                 val first=readApiWord(input)
                 first!=null && (first=="!done" || first=="!trap" || first=="!re")
             }
         }
     }catch(_:Exception){
-        // Some RouterOS/API implementations may not answer a probe exactly as expected.
-        // A successful TCP connection is enough for discovery; authentication is verified later.
         try{
-            Socket().use{s->s.connect(InetSocketAddress(ip,port),700);true}
+            Socket().use{s->
+                s.soTimeout=1000
+                s.connect(InetSocketAddress(ip,port),900)
+                true
+            }
         }catch(_:Exception){false}
     }
 
@@ -265,7 +295,7 @@ class MainActivity : Activity() {
 
     private fun base(title:String){
         root=LinearLayout(this).apply{
-            orientation=LinearLayout.VERTICAL;setPadding(24,26,24,28)
+            orientation=LinearLayout.VERTICAL;setPadding(20,22,20,24);clipChildren=false;clipToPadding=false
             background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(Color.rgb(7,20,42),Color.rgb(11,43,78)))
         }
         val scroll=ScrollView(this);scroll.setFillViewport(true);scroll.addView(root)
@@ -290,7 +320,7 @@ class MainActivity : Activity() {
     private fun field(h:String,v:String,secret:Boolean=false):EditText{
         val e=EditText(this).apply{
             hint=h;setText(v);textSize=16f;setTextColor(Color.WHITE);setHintTextColor(Color.rgb(130,160,190))
-            setSingleLine(true);setPadding(16,0,16,0);background=rounded(Color.rgb(17,37,63),Color.rgb(50,92,135),14f)
+            setSingleLine(true);setMinHeight(56);setPadding(16,0,16,0);background=rounded(Color.rgb(17,37,63),Color.rgb(50,92,135),14f)
             if(secret)inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
         root.addView(e,LinearLayout.LayoutParams(-1,56).apply{setMargins(0,6,0,8)});return e
@@ -298,14 +328,23 @@ class MainActivity : Activity() {
 
     private fun primaryButton(s:String,click:()->Unit)=Button(this).apply{
         text=s;textSize=14f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE)
-        background=GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,intArrayOf(Color.rgb(18,107,210),Color.rgb(27,157,220))).apply{cornerRadius=16f}
-        stateListAnimator=null;setOnClickListener{click()};layoutParams=LinearLayout.LayoutParams(-1,58).apply{setMargins(0,6,0,8)}
+        minHeight=56;minimumHeight=56;minWidth=48
+        includeFontPadding=true;gravity=Gravity.CENTER
+        setPadding(16,0,16,0)
+        background=GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(Color.rgb(18,107,210),Color.rgb(27,157,220))).apply{cornerRadius=18f}
+        stateListAnimator=null;setOnClickListener{click()}
+        layoutParams=LinearLayout.LayoutParams(-1,58).apply{setMargins(0,7,0,9)}
     }
 
     private fun secondaryButton(s:String,click:()->Unit)=Button(this).apply{
-        text=s;textSize=12f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.rgb(195,220,240))
-        background=rounded(Color.rgb(17,37,63),Color.rgb(57,95,130),14f);stateListAnimator=null;setOnClickListener{click()}
-        layoutParams=LinearLayout.LayoutParams(-1,52).apply{setMargins(0,5,0,7)}
+        text=s;textSize=12f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.rgb(205,225,242))
+        minHeight=52;minimumHeight=52;minWidth=48
+        includeFontPadding=true;gravity=Gravity.CENTER
+        setPadding(16,0,16,0)
+        background=rounded(Color.rgb(17,37,63),Color.rgb(57,95,130),16f)
+        stateListAnimator=null;setOnClickListener{click()}
+        layoutParams=LinearLayout.LayoutParams(-1,54).apply{setMargins(0,6,0,8)}
     }
 
     private fun rounded(fill:Int,stroke:Int,radius:Float)=GradientDrawable().apply{setColor(fill);setStroke(2,stroke);cornerRadius=radius}
