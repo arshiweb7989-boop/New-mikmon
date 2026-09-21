@@ -79,7 +79,7 @@ class MainActivity : Activity() {
         base("AUTO SEARCH")
         root.addView(text("MikroTik Router Discovery",20,true,Color.WHITE,Gravity.START))
         root.addView(text("Searching the active LAN. Gateway is checked first, then nearby IPs on ports 8728 and 8729.",13,false,Color.rgb(165,190,215),Gravity.START))
-        status.text="Preparing local network scan…"
+        status.text="Checking gateway + 172.26.10.1 + local LAN for TCP 8728/8729…"
         result=text("",14,false,Color.WHITE,Gravity.START)
         result.setPadding(0,14,0,14)
         root.addView(result)
@@ -89,9 +89,9 @@ class MainActivity : Activity() {
             ui {
                 searching=false
                 if(isFinishing)return@ui
-                status.text=if(found.isEmpty())"No MikroTik API service found on this Wi-Fi/LAN." else "Found "+found.size+" MikroTik API service(s)."
+                status.text=if(found.isEmpty())"No reachable API port 8728/8729 found." else "Found "+found.size+" reachable MikroTik API port(s)."
                 result.text=if(found.isEmpty())
-                    "Check:\n• Phone and MikroTik are on the same Wi-Fi/LAN\n• IP → Services → api or api-ssl is enabled\n• API port is 8728 or 8729\n• Router firewall/service address is not blocking this phone"
+                    "Check:\n• Phone and MikroTik are on the same Wi-Fi/LAN\n• On MikroTik: IP → Services → api (8728) or api-ssl (8729) is enabled\n• Router firewall/service address allows this phone\n• For your router, 172.26.10.1 is checked directly"
                 else "Select a router. The app will ask for username and password:"
                 found.forEach{item->root.addView(routerCard(item.first,item.second),root.indexOfChild(result)+1)}
             }
@@ -208,7 +208,8 @@ class MainActivity : Activity() {
         }else emptyList()
 
         val selfIp=raw.joinToString("."){(it.toInt() and 255).toString()}
-        val candidates=(gateways+localCandidates+listOf(selfIp)).distinct()
+        val knownCandidates=listOf("172.26.10.1")
+        val candidates=(knownCandidates+gateways+localCandidates+listOf(selfIp)).distinct()
         val found=Collections.synchronizedList(mutableListOf<Pair<String,Int>>())
         val pool=Executors.newFixedThreadPool(32)
         try{
@@ -227,45 +228,20 @@ class MainActivity : Activity() {
         ))
     }
 
-    private fun probeApi(ip:String,port:Int,ssl:Boolean):Boolean=try{
-        if(ssl){
-            val trustAll=arrayOf<javax.net.ssl.TrustManager>(object:javax.net.ssl.X509TrustManager{
-                override fun getAcceptedIssuers()=arrayOf<java.security.cert.X509Certificate>()
-                override fun checkClientTrusted(c:Array<java.security.cert.X509Certificate>,a:String){}
-                override fun checkServerTrusted(c:Array<java.security.cert.X509Certificate>,a:String){}
-            })
-            val ctx=javax.net.ssl.SSLContext.getInstance("TLS")
-            ctx.init(null,trustAll,java.security.SecureRandom())
-            val s=ctx.socketFactory.createSocket() as javax.net.ssl.SSLSocket
-            s.use{
-                it.soTimeout=1800
-                it.connect(InetSocketAddress(ip,port),1400)
-                it.startHandshake()
+    private fun probeApi(ip:String,port:Int,ssl:Boolean):Boolean {
+        // Discovery must only answer one question: is the TCP service reachable?
+        // Do NOT require a login/SSL handshake here. RouterOS credentials and
+        // API-SSL certificate negotiation are tested only after the user taps
+        // the discovered router.
+        return try {
+            Socket().use { s ->
+                s.soTimeout = 1200
+                s.connect(InetSocketAddress(ip,port),1200)
                 true
             }
-        }else{
-            Socket().use{s->
-                s.soTimeout=1800
-                s.connect(InetSocketAddress(ip,port),1400)
-                val input=java.io.BufferedInputStream(s.getInputStream())
-                val output=java.io.BufferedOutputStream(s.getOutputStream())
-                val word="/login".toByteArray(Charsets.UTF_8)
-                writeApiLength(output,word.size)
-                output.write(word)
-                output.write(0)
-                output.flush()
-                val first=readApiWord(input)
-                first!=null && (first=="!done" || first=="!trap" || first=="!re")
-            }
+        } catch(_:Exception) {
+            false
         }
-    }catch(_:Exception){
-        try{
-            Socket().use{s->
-                s.soTimeout=1000
-                s.connect(InetSocketAddress(ip,port),900)
-                true
-            }
-        }catch(_:Exception){false}
     }
 
     private fun writeApiLength(out:java.io.OutputStream,n:Int){
