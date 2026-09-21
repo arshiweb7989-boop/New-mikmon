@@ -62,10 +62,12 @@ class MainActivity : Activity() {
         val ip=field("MikroTik Router IP Address","192.168.88.1")
         val u=field("Username","admin")
         val p=field("Password","",true)
+        val port=field("API Port (1-65535)","8728")
         root.addView(primaryButton("TEST & CONNECT"){
             val host=ip.text.toString().trim()
             if(host.isBlank()){toast("Router IP is required");return@primaryButton}
-            connect(host,8728,u.text.toString().trim(),p.text.toString())
+            val po=port.text.toString().trim().toIntOrNull() ?: 8728
+            connect(host,po,u.text.toString().trim(),p.text.toString(),po==8729)
         })
         root.addView(secondaryButton("BACK"){home()})
     }
@@ -75,7 +77,7 @@ class MainActivity : Activity() {
         searching=true
         base("AUTO SEARCH")
         root.addView(text("MikroTik Router Discovery",20,true,Color.WHITE,Gravity.START))
-        root.addView(text("Scanning only the current Wi-Fi/LAN for API 8728. This replaces the old fixed-network scan that could freeze the app.",13,false,Color.rgb(165,190,215),Gravity.START))
+        root.addView(text("Scanning the current Wi-Fi/LAN for common MikroTik API ports 8728/8729 and selected custom ports. Manual Connect accepts any TCP port 1-65535.",13,false,Color.rgb(165,190,215),Gravity.START))
         status.text="Preparing local network scan…"
         result=text("",14,false,Color.WHITE,Gravity.START)
         result.setPadding(0,14,0,14)
@@ -117,10 +119,10 @@ class MainActivity : Activity() {
         root.addView(secondaryButton("BACK TO SEARCH"){autoSearch()})
     }
 
-    private fun connect(ip:String,port:Int,u:String,p:String){
+    private fun connect(ip:String,port:Int,u:String,p:String,ssl:Boolean=(port==8729)){
         status.text="Connecting to "+ip+":"+port+"…"
         ex.execute{
-            try{api.connect(ip,port,u,p);connected=true;ui{if(!isFinishing)dashboard(ip)}}
+            try{api.connect(ip,port,u,p,7000,ssl);connected=true;ui{if(!isFinishing)dashboard(ip)}}
             catch(e:Exception){connected=false;ui{status.text="Connection failed";toast(e.message?:"Unable to connect to MikroTik")}}
         }
     }
