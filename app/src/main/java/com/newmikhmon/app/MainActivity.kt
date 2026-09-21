@@ -68,7 +68,7 @@ class MainActivity:Activity(){
  private fun base(title:String){root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(22,24,22,28)};val s=ScrollView(this);s.addView(root);root.addView(text("NEW MIKHMON",27,true,Color.rgb(13,71,161),Gravity.CENTER));root.addView(text(title,19,true,Color.DKGRAY,Gravity.CENTER));status=text("",14,false,Color.GRAY,Gravity.CENTER);root.addView(status);setContentView(s)}
  private fun field(h:String,v:String,secret:Boolean=false):EditText{val e=EditText(this);e.hint=h;e.setText(v);e.textSize=16f;if(secret)e.inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD;root.addView(e);return e}
  private fun button(s:String,click:()->Unit)=Button(this).apply{text=s;setOnClickListener{click()}}
- private fun text(s:String,z:Float,b:Boolean,c:Int,g:Int)=TextView(this).apply{text=s;textSize=z;setTextColor(c);gravity=g;if(b)typeface=Typeface.DEFAULT_BOLD}
+ private fun text(s:String,z:Int,b:Boolean,c:Int,g:Int)=TextView(this).apply{text=s;textSize=z.toFloat();setTextColor(c);gravity=g;if(b)typeface=Typeface.DEFAULT_BOLD}
  private fun task(block:()->Unit){if(!connected){toast("Connect to MikroTik first");return};ex.execute{try{block()}catch(e:Exception){ui{toast(e.message?:"Operation failed")}}}}
  private fun showRows(rows:List<Map<String,String>>,title:String){ui{result.text=title+"\n\n"+rows.mapIndexed{i,r->(i+1).toString()+". "+(r["name"]?:"?")+" id="+(r[".id"]?:"?")+" profile="+(r["profile"]?:"")+" uptime="+(r["uptime"]?:"")}.joinToString("\n")}}
  private fun randomCode():String{val c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";return(1..8).map{c[Random.nextInt(c.length)]}.joinToString("")}
