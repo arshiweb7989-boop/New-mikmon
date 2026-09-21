@@ -13,31 +13,40 @@ jobs:
 
     steps:
 
-      # 1. Checkout
+      # ==========================================
+      # 1. Checkout repository
+      # ==========================================
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Java 21
+      # ==========================================
+      # 2. Setup Java 21
+      # ==========================================
       - name: Setup JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      # 3. Node.js
-      # Cache disabled because repository has no package-lock.json
+      # ==========================================
+      # 3. Setup Node.js
+      # ==========================================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           package-manager-cache: false
 
-      # 4. Install Capacitor CLI
+      # ==========================================
+      # 4. Install Capacitor
+      # ==========================================
       - name: Install Capacitor
         run: |
           npm install -g @capacitor/cli
 
+      # ==========================================
       # 5. Create Android project
+      # ==========================================
       - name: Create Android Project
         run: |
           set -e
@@ -113,22 +122,75 @@ jobs:
 
           npx cap add android
 
-      # 6. Configure Java 21
-      - name: Configure Java 21
+      # ==========================================
+      # 6. Fix Kotlin duplicate dependencies
+      # ==========================================
+      - name: Fix Kotlin Dependencies
         run: |
-          echo "JAVA_HOME=$JAVA_HOME"
-          java -version
+          set -e
+
+          cat >> android-project/android/build.gradle <<'EOF'
+
+          // MAGI-MON Kotlin dependency compatibility fix
+          allprojects {
+              configurations.configureEach {
+                  resolutionStrategy.eachDependency { details ->
+                      if (details.requested.group == "org.jetbrains.kotlin" &&
+                          details.requested.name.startsWith("kotlin-stdlib")) {
+                          details.useVersion("1.8.22")
+                          details.because("Avoid duplicate Kotlin stdlib versions")
+                      }
+                  }
+              }
+          }
+          EOF
+
+          echo "Kotlin dependency resolution added."
+
+      # ==========================================
+      # 7. Configure Gradle properties
+      # ==========================================
+      - name: Configure Gradle
+        run: |
+          set -e
 
           cat >> android-project/android/gradle.properties <<'EOF'
 
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          org.gradle.daemon=false
           EOF
 
-      # 7. Setup Gradle
+      # ==========================================
+      # 8. Setup Gradle
+      # ==========================================
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 8. Build APK
+      # ==========================================
+      # 9. Show environment
+      # ==========================================
+      - name: Check Build Environment
+        run: |
+          echo "===================================="
+          echo "JAVA VERSION"
+          echo "===================================="
+          java -version
+
+          echo ""
+          echo "===================================="
+          echo "NODE VERSION"
+          echo "===================================="
+          node --version
+
+          echo ""
+          echo "===================================="
+          echo "NPM VERSION"
+          echo "===================================="
+          npm --version
+
+      # ==========================================
+      # 10. Build APK
+      # ==========================================
       - name: Build Debug APK
         run: |
           set -e
@@ -137,27 +199,31 @@ jobs:
 
           chmod +x gradlew
 
-          echo "Java version:"
-          java -version
+          echo "===================================="
+          echo "BUILDING MAGI-MON APK"
+          echo "===================================="
 
-          echo "Gradle version:"
-          ./gradlew --version
-
-          echo "Building MAGI-MON APK..."
+          ./gradlew clean
 
           ./gradlew assembleDebug --stacktrace
 
-      # 9. Find APK
+      # ==========================================
+      # 11. Locate APK
+      # ==========================================
       - name: Locate APK
         run: |
-          echo "Searching for APK..."
+          echo "===================================="
+          echo "SEARCHING FOR APK"
+          echo "===================================="
 
           find android-project \
             -type f \
             -name "*.apk" \
             -print
 
-      # 10. Prepare APK
+      # ==========================================
+      # 12. Prepare APK
+      # ==========================================
       - name: Prepare APK
         run: |
           set -e
@@ -174,15 +240,18 @@ jobs:
             exit 1
           fi
 
-          echo "APK found:"
+          echo "APK FOUND:"
           echo "$APK"
 
           cp "$APK" apk-output/MAGI-MON-debug.apk
 
-          echo "Final APK:"
+          echo ""
+          echo "FINAL APK:"
           ls -lh apk-output/MAGI-MON-debug.apk
 
-      # 11. Upload APK
+      # ==========================================
+      # 13. Upload APK
+      # ==========================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -191,9 +260,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # 12. Complete
+      # ==========================================
+      # 14. Complete
+      # ==========================================
       - name: Build Complete
         run: |
+          echo ""
           echo "===================================="
           echo "MAGI-MON APK BUILD COMPLETED"
           echo "===================================="
