@@ -4,15 +4,30 @@ import java.io.BufferedOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.MessageDigest
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 class RouterOsApi{
  private var socket:Socket?=null;private var input:BufferedInputStream?=null;private var output:BufferedOutputStream?=null
- fun connect(host:String,port:Int,user:String,pass:String,timeout:Int=7000){
-  close();socket=Socket();socket!!.connect(InetSocketAddress(host,port),timeout);socket!!.soTimeout=timeout
+ fun connect(host:String,port:Int,user:String,pass:String,timeout:Int=7000,ssl:Boolean=(port==8729)){
+  if(port !in 1..65535)throw Exception("Invalid API port. Use 1-65535.")
+  close();socket=if(ssl)createInsecureSslSocket() else Socket();socket!!.connect(InetSocketAddress(host,port),timeout);socket!!.soTimeout=timeout
+  if(socket is SSLSocket)(socket as SSLSocket).startHandshake()
   input=BufferedInputStream(socket!!.getInputStream());output=BufferedOutputStream(socket!!.getOutputStream())
   var r=command(listOf("/login","=name=$user","=password=$pass"));checkTrap(r)
   val ret=r.flatMap{it}.firstOrNull{it.startsWith("=ret=")}
   if(ret!=null){val md=MessageDigest.getInstance("MD5");md.update(0);md.update(pass.toByteArray(Charsets.UTF_8));md.update(hex(ret.removePrefix("=ret=")));val digest=md.digest().joinToString(""){"%02x".format(it)};r=command(listOf("/login","=name=$user","=response=00$digest"));checkTrap(r)}
   if(r.none{it.firstOrNull()=="!done"})throw Exception("MikroTik login failed")
+ }
+ private fun createInsecureSslSocket():SSLSocket{
+  val trustAll=arrayOf<TrustManager>(object:X509TrustManager{
+   override fun getAcceptedIssuers()=arrayOf<java.security.cert.X509Certificate>()
+   override fun checkClientTrusted(c:Array<java.security.cert.X509Certificate>,a:String){}
+   override fun checkServerTrusted(c:Array<java.security.cert.X509Certificate>,a:String){}
+  })
+  val ctx=SSLContext.getInstance("TLS");ctx.init(null,trustAll,java.security.SecureRandom())
+  return ctx.socketFactory.createSocket() as SSLSocket
  }
  private fun checkTrap(r:List<List<String>>){val t=r.firstOrNull{it.firstOrNull()=="!trap"};if(t!=null)throw Exception(t.firstOrNull{it.startsWith("=message=")}?.removePrefix("=message=")?:"MikroTik rejected login")}
  fun getUsers()=print("/ip/hotspot/user/print");fun getActive()=print("/ip/hotspot/active/print")
