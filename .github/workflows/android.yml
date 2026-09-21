@@ -13,68 +13,81 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Find Android Project
+      - name: Install Capacitor
         run: |
-          echo "Searching for Android/Gradle project..."
-          find . -name "gradlew" -type f -print
-          find . -name "build.gradle" -type f -print
-          find . -name "build.gradle.kts" -type f -print
+          npm install -g @capacitor/cli
+
+      - name: Create Android Project
+        run: |
+          mkdir -p android-project
+          cd android-project
+
+          npm init -y
+
+          npm install @capacitor/core @capacitor/android
+
+          npx cap init "MAGI-MON" "com.magimon.app" --web-dir=www
+
+          mkdir -p www
+
+          cat > www/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>MAGI-MON</title>
+          </head>
+          <body>
+            <h1>MAGI-MON</h1>
+            <p>MikroTik Hotspot Manager</p>
+          </body>
+          </html>
+          EOF
+
+          npx cap add android
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Build Debug APK
         run: |
-          if [ -f "./gradlew" ]; then
-            echo "Gradle project found in root"
-            chmod +x ./gradlew
-            ./gradlew assembleDebug
-
-          elif [ -f "./android/gradlew" ]; then
-            echo "Gradle project found in android/"
-            chmod +x ./android/gradlew
-            cd android
-            ./gradlew assembleDebug
-
-          else
-            echo "ERROR: No Gradle Android project found."
-            echo "Repository contents:"
-            find . -maxdepth 3 -type f | head -200
-            exit 1
-          fi
+          cd android-project/android
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
       - name: Locate APK
         run: |
           echo "Searching for APK..."
-          find . -type f -name "*.apk" -print
+          find android-project -type f -name "*.apk" -print
 
       - name: Prepare APK
         run: |
           mkdir -p apk-output
 
-          APK=$(find . -type f -name "*-debug.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            APK=$(find . -type f -name "*.apk" | head -n 1)
-          fi
+          APK=$(find android-project -type f -name "*-debug.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "ERROR: APK was not created."
             exit 1
           fi
 
-          echo "APK found:"
-          echo "$APK"
+          echo "APK found: $APK"
 
-          cp "$APK" "apk-output/MAGI-MON-debug.apk"
+          cp "$APK" apk-output/MAGI-MON-debug.apk
 
           ls -lh apk-output/MAGI-MON-debug.apk
 
