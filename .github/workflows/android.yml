@@ -21,39 +21,39 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Generate Android Project
-        run: |
-          mkdir -p android-project
-
-          # Copy project files
-          cp -r . android-project/source
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Find Gradle Project
+      - name: Find Android Project
         run: |
-          echo "Searching for Gradle project..."
-          find . -name "gradlew" -type f
-          find . -name "build.gradle" -o -name "build.gradle.kts"
+          echo "Searching for Android/Gradle project..."
+          find . -name "gradlew" -type f -print
+          find . -name "build.gradle" -type f -print
+          find . -name "build.gradle.kts" -type f -print
 
       - name: Build Debug APK
         run: |
           if [ -f "./gradlew" ]; then
+            echo "Gradle project found in root"
             chmod +x ./gradlew
             ./gradlew assembleDebug
-          elif [ -f "./android-project/gradlew" ]; then
-            chmod +x ./android-project/gradlew
-            cd android-project
+
+          elif [ -f "./android/gradlew" ]; then
+            echo "Gradle project found in android/"
+            chmod +x ./android/gradlew
+            cd android
             ./gradlew assembleDebug
+
           else
-            echo "ERROR: Gradle wrapper not found."
+            echo "ERROR: No Gradle Android project found."
+            echo "Repository contents:"
+            find . -maxdepth 3 -type f | head -200
             exit 1
           fi
 
       - name: Locate APK
         run: |
-          echo "Searching for APK files..."
+          echo "Searching for APK..."
           find . -type f -name "*.apk" -print
 
       - name: Prepare APK
@@ -67,14 +67,16 @@ jobs:
           fi
 
           if [ -z "$APK" ]; then
-            echo "ERROR: No APK found!"
+            echo "ERROR: APK was not created."
             exit 1
           fi
 
-          echo "Found APK: $APK"
-          cp "$APK" apk-output/MAGI-MON-debug.apk
+          echo "APK found:"
+          echo "$APK"
 
-          ls -lh apk-output/
+          cp "$APK" "apk-output/MAGI-MON-debug.apk"
+
+          ls -lh apk-output/MAGI-MON-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
