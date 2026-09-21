@@ -184,10 +184,11 @@ class MainActivity : Activity() {
         val networkInt=ipInt and mask
         val hostCount=if(scanPrefix>=31)0 else (1 shl (32-scanPrefix))-2
         if(hostCount<=0)throw Exception("Wi-Fi network is too small for discovery")
+        val gatewayCandidates=lp.routes.mapNotNull{it.gateway}.filterIsInstance<Inet4Address>().map{it.hostAddress}.filterNotNull()
         val candidates=(1..hostCount).map{offset->
             val n=networkInt+offset
             ((n ushr 24) and 255).toString()+"."+((n ushr 16) and 255)+"."+((n ushr 8) and 255)+"."+(n and 255)
-        }.distinct()
+        }.plus(gatewayCandidates).plus(raw.joinToString(".") { (it.toInt() and 255).toString() }).distinct()
         val found=Collections.synchronizedList(mutableListOf<Pair<String,Int>>())
         val pool=Executors.newFixedThreadPool(32)
         try{
@@ -203,17 +204,24 @@ class MainActivity : Activity() {
 
     private fun probeApi(ip:String,port:Int,ssl:Boolean):Boolean=try{
         if(ssl){
-            val s=javax.net.ssl.SSLContext.getInstance("TLS").socketFactory.createSocket() as javax.net.ssl.SSLSocket
+            val trustAll=arrayOf<javax.net.ssl.TrustManager>(object:javax.net.ssl.X509TrustManager{
+                override fun getAcceptedIssuers()=arrayOf<java.security.cert.X509Certificate>()
+                override fun checkClientTrusted(c:Array<java.security.cert.X509Certificate>,a:String){}
+                override fun checkServerTrusted(c:Array<java.security.cert.X509Certificate>,a:String){}
+            })
+            val ctx=javax.net.ssl.SSLContext.getInstance("TLS")
+            ctx.init(null,trustAll,java.security.SecureRandom())
+            val s=ctx.socketFactory.createSocket() as javax.net.ssl.SSLSocket
             s.use{
-                it.soTimeout=900
-                it.connect(InetSocketAddress(ip,port),700)
+                it.soTimeout=1500
+                it.connect(InetSocketAddress(ip,port),1200)
                 it.startHandshake()
                 true
             }
         }else{
             Socket().use{s->
-                s.soTimeout=900
-                s.connect(InetSocketAddress(ip,port),700)
+                s.soTimeout=1200
+                s.connect(InetSocketAddress(ip,port),1000)
                 val input=java.io.BufferedInputStream(s.getInputStream())
                 val output=java.io.BufferedOutputStream(s.getOutputStream())
                 val word="/login".toByteArray(Charsets.UTF_8)
@@ -222,7 +230,13 @@ class MainActivity : Activity() {
                 first!=null && (first=="!done" || first=="!trap" || first=="!re")
             }
         }
-    }catch(_:Exception){false}
+    }catch(_:Exception){
+        // Some RouterOS/API implementations may not answer a probe exactly as expected.
+        // A successful TCP connection is enough for discovery; authentication is verified later.
+        try{
+            Socket().use{s->s.connect(InetSocketAddress(ip,port),700);true}
+        }catch(_:Exception){false}
+    }
 
     private fun writeApiLength(out:java.io.OutputStream,n:Int){
         when{
