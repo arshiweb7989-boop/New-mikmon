@@ -30,6 +30,15 @@ class RouterOsApi{
   return ctx.socketFactory.createSocket() as SSLSocket
  }
  private fun checkTrap(r:List<List<String>>){val t=r.firstOrNull{it.firstOrNull()=="!trap"};if(t!=null)throw Exception(t.firstOrNull{it.startsWith("=message=")}?.removePrefix("=message=")?:"MikroTik rejected login")}
+ fun getResource():Map<String,String>{
+  val rows=command(listOf("/system/resource/print")).filter{it.firstOrNull()=="!re"}
+  val row=rows.firstOrNull()?:throw Exception("API connected but router did not return /system/resource/print")
+  return row.filter{it.startsWith("=")}.mapNotNull{
+   val p=it.indexOf('=')
+   val q=it.indexOf('=',p+1)
+   if(p>=0&&q>p)it.substring(p+1,q) to it.substring(q+1) else null
+  }.toMap()
+ }
  fun getUsers()=print("/ip/hotspot/user/print");fun getActive()=print("/ip/hotspot/active/print")
  fun addUser(n:String,p:String,pr:String?,sp:String?,da:String?,ti:String?){val w=mutableListOf("/ip/hotspot/user/add","=name=$n","=password=$p");if(!pr.isNullOrBlank())w+="=profile=$pr";if(!sp.isNullOrBlank())w+="=rate-limit=$sp";if(!da.isNullOrBlank())w+="=limit-bytes-total=$da";if(!ti.isNullOrBlank())w+="=limit-uptime=$ti";done(command(w))}
  fun removeUser(id:String)=done(command(listOf("/ip/hotspot/user/remove","=.id=$id")));fun disableUser(id:String)=done(command(listOf("/ip/hotspot/user/disable","=.id=$id")));fun enableUser(id:String)=done(command(listOf("/ip/hotspot/user/enable","=.id=$id")))
