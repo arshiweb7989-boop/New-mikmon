@@ -59,7 +59,7 @@ class MainActivity : Activity() {
         base("MANUAL CONNECT")
         root.addView(text("Connect to your MikroTik router",20,true,Color.WHITE,Gravity.START))
         root.addView(text("Enter the router IP, API port and credentials.",13,false,Color.rgb(165,190,215),Gravity.START))
-        val ip=field("MikroTik Router IP Address","192.168.88.1")
+        val ip=field("MikroTik Router IP Address","172.16.10.1")
         val u=field("Username","admin")
         val p=field("Password","",true)
         val port=field("API Port (1-65535)","8728")
@@ -79,7 +79,7 @@ class MainActivity : Activity() {
         base("AUTO SEARCH")
         root.addView(text("MikroTik Router Discovery",20,true,Color.WHITE,Gravity.START))
         root.addView(text("Searching the active LAN. Gateway is checked first, then nearby IPs on ports 8728 and 8729.",13,false,Color.rgb(165,190,215),Gravity.START))
-        status.text="Checking gateway + 172.26.10.1 + local LAN for TCP 8728/8729…"
+        status.text="Checking gateway + 172.16.10.1 + local LAN for TCP 8728/8729…"
         result=text("",14,false,Color.WHITE,Gravity.START)
         result.setPadding(0,14,0,14)
         root.addView(result)
@@ -91,9 +91,9 @@ class MainActivity : Activity() {
                 if(isFinishing)return@ui
                 status.text=if(found.isEmpty())"No reachable API port 8728/8729 found." else "Found "+found.size+" reachable MikroTik API port(s)."
                 if(found.isEmpty()){
-                    val p8728=probeApi("172.26.10.1",8728,false)
-                    val p8729=probeApi("172.26.10.1",8729,true)
-                    result.text="DIRECT TEST: 172.26.10.1\\n\\n"+
+                    val p8728=probeApi("172.16.10.1",8728,false)
+                    val p8729=probeApi("172.16.10.1",8729,true)
+                    result.text="DIRECT TEST: 172.16.10.1\\n\\n"+
                             "TCP 8728 (API): "+if(p8728)"OPEN ✓" else "CLOSED / BLOCKED ✗"+"\\n"+
                             "TCP 8729 (API-SSL): "+if(p8729)"OPEN ✓" else "CLOSED / BLOCKED ✗"+"\\n\\n"+
                             if(!p8728 && !p8729)
@@ -218,7 +218,7 @@ class MainActivity : Activity() {
         }else emptyList()
 
         val selfIp=raw.joinToString("."){(it.toInt() and 255).toString()}
-        val knownCandidates=listOf("172.26.10.1")
+        val knownCandidates=listOf("172.16.10.1")
         val candidates=(knownCandidates+gateways+localCandidates+listOf(selfIp)).distinct()
         val found=Collections.synchronizedList(mutableListOf<Pair<String,Int>>())
         val pool=Executors.newFixedThreadPool(32)
