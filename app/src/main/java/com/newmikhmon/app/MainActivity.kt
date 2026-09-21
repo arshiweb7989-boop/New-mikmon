@@ -90,9 +90,19 @@ class MainActivity : Activity() {
                 searching=false
                 if(isFinishing)return@ui
                 status.text=if(found.isEmpty())"No reachable API port 8728/8729 found." else "Found "+found.size+" reachable MikroTik API port(s)."
-                result.text=if(found.isEmpty())
-                    "Check:\n• Phone and MikroTik are on the same Wi-Fi/LAN\n• On MikroTik: IP → Services → api (8728) or api-ssl (8729) is enabled\n• Router firewall/service address allows this phone\n• For your router, 172.26.10.1 is checked directly"
-                else "Select a router. The app will ask for username and password:"
+                if(found.isEmpty()){
+                    val p8728=probeApi("172.26.10.1",8728,false)
+                    val p8729=probeApi("172.26.10.1",8729,true)
+                    result.text="DIRECT TEST: 172.26.10.1\\n\\n"+
+                            "TCP 8728 (API): "+if(p8728)"OPEN ✓" else "CLOSED / BLOCKED ✗"+"\\n"+
+                            "TCP 8729 (API-SSL): "+if(p8729)"OPEN ✓" else "CLOSED / BLOCKED ✗"+"\\n\\n"+
+                            if(!p8728 && !p8729)
+                                "The phone cannot reach either MikroTik API port.\\n"+
+                                "Check same Wi-Fi/LAN, client isolation, firewall, and IP → Services."
+                            else
+                                "A MikroTik API port is reachable but discovery returned no card.\\n"+
+                                "Try MANUAL CONNECT with 172.26.10.1 and the OPEN port."
+                } else result.text="Select a router. The app will ask for username and password:"
                 found.forEach{item->root.addView(routerCard(item.first,item.second),root.indexOfChild(result)+1)}
             }
         }
