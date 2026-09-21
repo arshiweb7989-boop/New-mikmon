@@ -8,30 +8,49 @@ on:
 
 jobs:
   build:
-    name: Build APK
+    name: Build MAGI-MON APK
     runs-on: ubuntu-latest
 
     steps:
+
+      # --------------------------------------------------
+      # 1. Get repository
+      # --------------------------------------------------
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17
+      # --------------------------------------------------
+      # 2. Setup Java 21
+      # --------------------------------------------------
+      - name: Setup JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
+      # --------------------------------------------------
+      # 3. Setup Node.js
+      # --------------------------------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
+      # --------------------------------------------------
+      # 4. Install Capacitor
+      # --------------------------------------------------
       - name: Install Capacitor
         run: |
           npm install -g @capacitor/cli
 
+      # --------------------------------------------------
+      # 5. Create Android project
+      # --------------------------------------------------
       - name: Create Android Project
         run: |
+          set -e
+
           mkdir -p android-project
           cd android-project
 
@@ -48,49 +67,150 @@ jobs:
           <html>
           <head>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta
+              name="viewport"
+              content="width=device-width,
+              initial-scale=1.0,
+              maximum-scale=1.0,
+              user-scalable=no"
+            >
+
             <title>MAGI-MON</title>
+
+            <style>
+              html,
+              body {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+                background: #ffffff;
+                font-family: Arial, sans-serif;
+              }
+
+              body {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              }
+
+              .container {
+                text-align: center;
+              }
+
+              h1 {
+                margin: 0;
+                font-size: 32px;
+              }
+
+              p {
+                margin-top: 10px;
+                color: #666666;
+              }
+            </style>
           </head>
+
           <body>
-            <h1>MAGI-MON</h1>
-            <p>MikroTik Hotspot Manager</p>
+            <div class="container">
+              <h1>MAGI-MON</h1>
+              <p>MikroTik Hotspot Manager</p>
+            </div>
           </body>
           </html>
           EOF
 
           npx cap add android
 
+      # --------------------------------------------------
+      # 6. Configure Java 21 for Gradle
+      # --------------------------------------------------
+      - name: Configure Java 21
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version
+
+          find android-project/android \
+            -name "gradle.properties" \
+            -type f \
+            -print
+
+          cat >> android-project/android/gradle.properties <<'EOF'
+
+          org.gradle.java.home=${JAVA_HOME}
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          EOF
+
+      # --------------------------------------------------
+      # 7. Setup Gradle
+      # --------------------------------------------------
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # --------------------------------------------------
+      # 8. Build Debug APK
+      # --------------------------------------------------
       - name: Build Debug APK
         run: |
-          cd android-project/android
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          set -e
 
+          cd android-project/android
+
+          chmod +x gradlew
+
+          echo "Java version:"
+          java -version
+
+          echo "Gradle version:"
+          ./gradlew --version
+
+          echo "Building APK..."
+
+          ./gradlew assembleDebug --stacktrace
+
+      # --------------------------------------------------
+      # 9. Find APK
+      # --------------------------------------------------
       - name: Locate APK
         run: |
-          echo "Searching for APK..."
-          find android-project -type f -name "*.apk" -print
+          echo "Searching for generated APK..."
 
+          find android-project \
+            -type f \
+            -name "*.apk" \
+            -print
+
+      # --------------------------------------------------
+      # 10. Prepare APK
+      # --------------------------------------------------
       - name: Prepare APK
         run: |
+          set -e
+
           mkdir -p apk-output
 
-          APK=$(find android-project -type f -name "*-debug.apk" | head -n 1)
+          APK=$(find android-project \
+            -type f \
+            -name "*-debug.apk" \
+            | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: APK was not created."
+            echo "ERROR: Debug APK was not found."
+            echo "All files:"
+            find android-project -type f | head -300
             exit 1
           fi
 
-          echo "APK found: $APK"
+          echo "APK found:"
+          echo "$APK"
 
-          cp "$APK" apk-output/MAGI-MON-debug.apk
+          cp "$APK" "apk-output/MAGI-MON-debug.apk"
 
+          echo "Final APK:"
           ls -lh apk-output/MAGI-MON-debug.apk
 
+      # --------------------------------------------------
+      # 11. Upload actual APK
+      # --------------------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -98,3 +218,13 @@ jobs:
           path: apk-output/MAGI-MON-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      # --------------------------------------------------
+      # 12. Build information
+      # --------------------------------------------------
+      - name: Build Complete
+        run: |
+          echo "===================================="
+          echo "MAGI-MON APK BUILD COMPLETED"
+          echo "===================================="
+          ls -lh apk-output/
