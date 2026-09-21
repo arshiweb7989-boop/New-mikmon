@@ -52,13 +52,13 @@ class MainActivity : Activity() {
         root.addView(Space(this), LinearLayout.LayoutParams(1,14))
         root.addView(actionCard("AUTO SEARCH","Find MikroTik API routers on this Wi-Fi","SCAN"){ autoSearch() })
         root.addView(Space(this), LinearLayout.LayoutParams(1,22))
-        root.addView(text("API 8728  •  RouterOS v6 / v7",12,false,Color.rgb(140,170,200),Gravity.CENTER))
+        root.addView(text("API 8728  •  API-SSL 8729  •  RouterOS v6 / v7",12,false,Color.rgb(140,170,200),Gravity.CENTER))
     }
 
     private fun manual() {
         base("MANUAL CONNECT")
         root.addView(text("Connect to your MikroTik router",20,true,Color.WHITE,Gravity.START))
-        root.addView(text("Enter the router's local IP and API credentials.",13,false,Color.rgb(165,190,215),Gravity.START))
+        root.addView(text("Enter the router IP, API port and credentials.",13,false,Color.rgb(165,190,215),Gravity.START))
         val ip=field("MikroTik Router IP Address","192.168.88.1")
         val u=field("Username","admin")
         val p=field("Password","",true)
@@ -66,7 +66,8 @@ class MainActivity : Activity() {
         root.addView(primaryButton("TEST & CONNECT"){
             val host=ip.text.toString().trim()
             if(host.isBlank()){toast("Router IP is required");return@primaryButton}
-            val po=port.text.toString().trim().toIntOrNull() ?: 8728
+            val po=port.text.toString().trim().toIntOrNull()
+            if(po==null||po !in 1..65535){toast("API port must be 1-65535");return@primaryButton}
             connect(host,po,u.text.toString().trim(),p.text.toString(),po==8729)
         })
         root.addView(secondaryButton("BACK"){home()})
@@ -77,7 +78,7 @@ class MainActivity : Activity() {
         searching=true
         base("AUTO SEARCH")
         root.addView(text("MikroTik Router Discovery",20,true,Color.WHITE,Gravity.START))
-        root.addView(text("Scanning the current Wi-Fi/LAN for common MikroTik API ports 8728/8729 and selected custom ports. Manual Connect accepts any TCP port 1-65535.",13,false,Color.rgb(165,190,215),Gravity.START))
+        root.addView(text("Searching this Wi-Fi/LAN for both MikroTik API ports: 8728 and 8729.",13,false,Color.rgb(165,190,215),Gravity.START))
         status.text="Preparing local network scan…"
         result=text("",14,false,Color.WHITE,Gravity.START)
         result.setPadding(0,14,0,14)
@@ -88,42 +89,49 @@ class MainActivity : Activity() {
             ui {
                 searching=false
                 if(isFinishing)return@ui
-                status.text=if(found.isEmpty())"No API 8728 router found on this Wi-Fi." else "Found "+found.size+" possible router(s)."
+                status.text=if(found.isEmpty())"No MikroTik API service found on this Wi-Fi/LAN." else "Found "+found.size+" MikroTik API service(s)."
                 result.text=if(found.isEmpty())
-                    "Check:\n• Phone and MikroTik are on the same Wi-Fi/LAN\n• IP → Services → api is enabled\n• API port is 8728"
-                else "Select a router to enter username and password:"
-                found.forEach{ip->root.addView(routerCard(ip),root.indexOfChild(result)+1)}
+                    "Check:\n• Phone and MikroTik are on the same Wi-Fi/LAN\n• IP → Services → api or api-ssl is enabled\n• API port is 8728 or 8729\n• Router firewall/service address is not blocking this phone"
+                else "Select a router. The app will ask for username and password:"
+                found.forEach{item->root.addView(routerCard(item.first,item.second),root.indexOfChild(result)+1)}
             }
         }
     }
 
-    private fun routerCard(ip:String):View {
+    private fun routerCard(ip:String,port:Int):View {
         val card=LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL;setPadding(18,14,18,14)
             background=rounded(Color.rgb(18,39,68),Color.rgb(48,88,135),16f)
         }
         card.addView(text("MIKROTIK ROUTER",11,true,Color.rgb(105,190,255),Gravity.START))
         card.addView(text(ip,18,true,Color.WHITE,Gravity.START))
-        card.addView(text("API 8728 • Tap to connect",12,false,Color.rgb(170,195,220),Gravity.START))
-        card.setOnClickListener{credentials(ip)}
+        card.addView(text(if(port==8729)"API-SSL 8729 • Tap to connect" else "API 8728 • Tap to connect",12,false,Color.rgb(170,195,220),Gravity.START))
+        card.setOnClickListener{credentials(ip,port)}
         card.layoutParams=LinearLayout.LayoutParams(-1,-2).apply{setMargins(0,6,0,6)}
         return card
     }
 
-    private fun credentials(ip:String){
+    private fun credentials(ip:String,port:Int){
         base("ROUTER FOUND")
         root.addView(text("MikroTik • "+ip,22,true,Color.WHITE,Gravity.CENTER))
-        root.addView(text("Enter router credentials",13,false,Color.rgb(165,190,215),Gravity.CENTER))
-        val u=field("Username","admin");val p=field("Password","",true)
-        root.addView(primaryButton("CONNECT TO MIKROTIK"){connect(ip,8728,u.text.toString().trim(),p.text.toString())})
+        root.addView(text(if(port==8729)"API-SSL port 8729" else "API port 8728",13,false,Color.rgb(165,190,215),Gravity.CENTER))
+        val u=field("Username","admin")
+        val p=field("Password","",true)
+        root.addView(primaryButton("CONNECT TO MIKROTIK"){connect(ip,port,u.text.toString().trim(),p.text.toString(),port==8729)})
         root.addView(secondaryButton("BACK TO SEARCH"){autoSearch()})
     }
 
     private fun connect(ip:String,port:Int,u:String,p:String,ssl:Boolean=(port==8729)){
         status.text="Connecting to "+ip+":"+port+"…"
         ex.execute{
-            try{api.connect(ip,port,u,p,7000,ssl);connected=true;ui{if(!isFinishing)dashboard(ip)}}
-            catch(e:Exception){connected=false;ui{status.text="Connection failed";toast(e.message?:"Unable to connect to MikroTik")}}
+            try{
+                api.connect(ip,port,u,p,7000,ssl)
+                connected=true
+                ui{if(!isFinishing)dashboard(ip)}
+            }catch(e:Exception){
+                connected=false
+                ui{status.text="Connection failed: "+(e.message?:"Unknown error");toast(e.message?:"Unable to connect to MikroTik")}
+            }
         }
     }
 
@@ -159,7 +167,7 @@ class MainActivity : Activity() {
         root.addView(secondaryButton("DISCONNECT / HOME"){api.close();connected=false;home()})
     }
 
-    private fun scanLocalNetwork():List<String>{
+    private fun scanLocalNetwork():List<Pair<String,Int>>{
         val cm=getSystemService(ConnectivityManager::class.java)
         val network=cm.activeNetwork?:throw Exception("No active network")
         val caps=cm.getNetworkCapabilities(network)
@@ -169,32 +177,77 @@ class MainActivity : Activity() {
         val la=lp.linkAddresses.firstOrNull{it.address is Inet4Address}?:throw Exception("No IPv4 on Wi-Fi")
         val raw=(la.address as Inet4Address).address
         val prefix=la.prefixLength
-        val effectivePrefix=maxOf(prefix,24)
-        val mask=if(effectivePrefix==32)-1 else(-1 shl (32-effectivePrefix))
+        val scanPrefix=if(prefix<24)24 else prefix
+        val mask=if(scanPrefix>=32)-1 else(-1 shl (32-scanPrefix))
         val ipInt=((raw[0].toInt() and 255) shl 24) or ((raw[1].toInt() and 255) shl 16) or
                 ((raw[2].toInt() and 255) shl 8) or (raw[3].toInt() and 255)
         val networkInt=ipInt and mask
-        val candidates=(1..254).map{h->
-            val n=(networkInt and -256) or h
+        val hostCount=if(scanPrefix>=31)0 else (1 shl (32-scanPrefix))-2
+        if(hostCount<=0)throw Exception("Wi-Fi network is too small for discovery")
+        val candidates=(1..hostCount).map{offset->
+            val n=networkInt+offset
             ((n ushr 24) and 255).toString()+"."+((n ushr 16) and 255)+"."+((n ushr 8) and 255)+"."+(n and 255)
         }.distinct()
-        val found=Collections.synchronizedList(mutableListOf<String>())
-        val pool=Executors.newFixedThreadPool(24)
+        val found=Collections.synchronizedList(mutableListOf<Pair<String,Int>>())
+        val pool=Executors.newFixedThreadPool(32)
         try{
-            val futures=candidates.mapIndexed{index,candidate->
-                pool.submit{
-                    if(probe(candidate))found.add(candidate)
-                    if(index%20==0)ui{if(!isFinishing&&searching)status.text="Scanning local Wi-Fi… "+(index+1)+"/"+candidates.size}
-                }
+            val futures=candidates.flatMap{candidate->
+                listOf(8728,8729).map{port->pool.submit{
+                    if(probeApi(candidate,port,port==8729))found.add(candidate to port)
+                }}
             }
             futures.forEach{it.get()}
         }finally{pool.shutdownNow()}
-        return found.distinct().sorted()
+        return found.distinct().sortedWith(compareBy({it.first},{it.second}))
     }
 
-    private fun probe(ip:String)=try{
-        Socket().use{s->s.connect(InetSocketAddress(ip,8728),300);true}
+    private fun probeApi(ip:String,port:Int,ssl:Boolean):Boolean=try{
+        if(ssl){
+            val s=javax.net.ssl.SSLContext.getInstance("TLS").socketFactory.createSocket() as javax.net.ssl.SSLSocket
+            s.use{
+                it.soTimeout=900
+                it.connect(InetSocketAddress(ip,port),700)
+                it.startHandshake()
+                true
+            }
+        }else{
+            Socket().use{s->
+                s.soTimeout=900
+                s.connect(InetSocketAddress(ip,port),700)
+                val input=java.io.BufferedInputStream(s.getInputStream())
+                val output=java.io.BufferedOutputStream(s.getOutputStream())
+                val word="/login".toByteArray(Charsets.UTF_8)
+                writeApiLength(output,word.size);output.write(word);output.write(0);output.flush()
+                val first=readApiWord(input)
+                first!=null && (first=="!done" || first=="!trap" || first=="!re")
+            }
+        }
     }catch(_:Exception){false}
+
+    private fun writeApiLength(out:java.io.OutputStream,n:Int){
+        when{
+            n<128->out.write(n)
+            n<16384->{out.write((n shr 8) or 128);out.write(n and 255)}
+            n<2097152->{out.write((n shr 16) or 192);out.write((n shr 8) and 255);out.write(n and 255)}
+            else->{out.write((n shr 24) or 224);out.write((n shr 16) and 255);out.write((n shr 8) and 255);out.write(n and 255)}
+        }
+    }
+
+    private fun readApiWord(input:java.io.InputStream):String?{
+        val b=input.read()
+        if(b<0)return null
+        val n=when{
+            b and 128==0->b
+            b and 192==128->((b and 63) shl 8) or input.read()
+            b and 224==192->((b and 31) shl 16) or (input.read() shl 8) or input.read()
+            b and 240==224->((b and 15) shl 24) or (input.read() shl 16) or (input.read() shl 8) or input.read()
+            else->return null
+        }
+        if(n<=0)return null
+        val data=ByteArray(n);var pos=0
+        while(pos<n){val r=input.read(data,pos,n-pos);if(r<0)return null;pos+=r}
+        return String(data,Charsets.UTF_8)
+    }
 
     private fun base(title:String){
         root=LinearLayout(this).apply{
