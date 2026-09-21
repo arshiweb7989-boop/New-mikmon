@@ -1,273 +1,45 @@
-name: Build Android APK
+name: Build New Mikhmon APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build MAGI-MON APK
+    name: Build New Mikhmon
     runs-on: ubuntu-latest
 
     steps:
-
-      # ==========================================
-      # 1. Checkout repository
-      # ==========================================
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ==========================================
-      # 2. Setup Java 21
-      # ==========================================
-      - name: Setup JDK 21
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
-      # ==========================================
-      # 3. Setup Node.js
-      # ==========================================
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          package-manager-cache: false
-
-      # ==========================================
-      # 4. Install Capacitor
-      # ==========================================
-      - name: Install Capacitor
-        run: |
-          npm install -g @capacitor/cli
-
-      # ==========================================
-      # 5. Create Android project
-      # ==========================================
-      - name: Create Android Project
-        run: |
-          set -e
-
-          mkdir -p android-project
-          cd android-project
-
-          npm init -y
-
-          npm install @capacitor/core @capacitor/android
-
-          npx cap init "MAGI-MON" "com.magimon.app" --web-dir=www
-
-          mkdir -p www
-
-          cat > www/index.html <<'EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="UTF-8">
-
-            <meta
-              name="viewport"
-              content="width=device-width,
-              initial-scale=1.0,
-              maximum-scale=1.0,
-              user-scalable=no"
-            >
-
-            <title>MAGI-MON</title>
-
-            <style>
-              html,
-              body {
-                margin: 0;
-                padding: 0;
-                width: 100%;
-                height: 100%;
-                background: #ffffff;
-                font-family: Arial, sans-serif;
-              }
-
-              body {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-              }
-
-              .container {
-                text-align: center;
-              }
-
-              h1 {
-                margin: 0;
-                font-size: 32px;
-              }
-
-              p {
-                margin-top: 10px;
-                color: #666666;
-              }
-            </style>
-          </head>
-
-          <body>
-            <div class="container">
-              <h1>MAGI-MON</h1>
-              <p>MikroTik Hotspot Manager</p>
-            </div>
-          </body>
-          </html>
-          EOF
-
-          npx cap add android
-
-      # ==========================================
-      # 6. Fix Kotlin duplicate dependencies
-      # ==========================================
-      - name: Fix Kotlin Dependencies
-        run: |
-          set -e
-
-          cat >> android-project/android/build.gradle <<'EOF'
-
-          // MAGI-MON Kotlin dependency compatibility fix
-          allprojects {
-              configurations.configureEach {
-                  resolutionStrategy.eachDependency { details ->
-                      if (details.requested.group == "org.jetbrains.kotlin" &&
-                          details.requested.name.startsWith("kotlin-stdlib")) {
-                          details.useVersion("1.8.22")
-                          details.because("Avoid duplicate Kotlin stdlib versions")
-                      }
-                  }
-              }
-          }
-          EOF
-
-          echo "Kotlin dependency resolution added."
-
-      # ==========================================
-      # 7. Configure Gradle properties
-      # ==========================================
-      - name: Configure Gradle
-        run: |
-          set -e
-
-          cat >> android-project/android/gradle.properties <<'EOF'
-
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          org.gradle.daemon=false
-          EOF
-
-      # ==========================================
-      # 8. Setup Gradle
-      # ==========================================
-      - name: Setup Gradle
+      - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-      # ==========================================
-      # 9. Show environment
-      # ==========================================
-      - name: Check Build Environment
-        run: |
-          echo "===================================="
-          echo "JAVA VERSION"
-          echo "===================================="
-          java -version
-
-          echo ""
-          echo "===================================="
-          echo "NODE VERSION"
-          echo "===================================="
-          node --version
-
-          echo ""
-          echo "===================================="
-          echo "NPM VERSION"
-          echo "===================================="
-          npm --version
-
-      # ==========================================
-      # 10. Build APK
-      # ==========================================
       - name: Build Debug APK
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+
+      - name: Verify APK
         run: |
-          set -e
-
-          cd android-project/android
-
-          chmod +x gradlew
-
-          echo "===================================="
-          echo "BUILDING MAGI-MON APK"
-          echo "===================================="
-
-          ./gradlew clean
-
-          ./gradlew assembleDebug --stacktrace
-
-      # ==========================================
-      # 11. Locate APK
-      # ==========================================
-      - name: Locate APK
-        run: |
-          echo "===================================="
-          echo "SEARCHING FOR APK"
-          echo "===================================="
-
-          find android-project \
-            -type f \
-            -name "*.apk" \
-            -print
-
-      # ==========================================
-      # 12. Prepare APK
-      # ==========================================
-      - name: Prepare APK
-        run: |
-          set -e
-
           mkdir -p apk-output
+          APK=$(find app/build/outputs/apk/debug -type f -name "*.apk" | head -n 1)
+          test -n "$APK"
+          cp "$APK" apk-output/New-Mikhmon-debug.apk
+          ls -lh apk-output/New-Mikhmon-debug.apk
 
-          APK=$(find android-project \
-            -type f \
-            -name "*-debug.apk" \
-            | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK was not found."
-            exit 1
-          fi
-
-          echo "APK FOUND:"
-          echo "$APK"
-
-          cp "$APK" apk-output/MAGI-MON-debug.apk
-
-          echo ""
-          echo "FINAL APK:"
-          ls -lh apk-output/MAGI-MON-debug.apk
-
-      # ==========================================
-      # 13. Upload APK
-      # ==========================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MAGI-MON-APK
-          path: apk-output/MAGI-MON-debug.apk
+          name: New-Mikhmon-APK
+          path: apk-output/New-Mikhmon-debug.apk
           if-no-files-found: error
           retention-days: 30
-
-      # ==========================================
-      # 14. Complete
-      # ==========================================
-      - name: Build Complete
-        run: |
-          echo ""
-          echo "===================================="
-          echo "MAGI-MON APK BUILD COMPLETED"
-          echo "===================================="
-
-          ls -lh apk-output/
